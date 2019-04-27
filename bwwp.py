@@ -1,8 +1,9 @@
 import sys
-import pygame
+import bwwpaudio as ba
 import random
 import time
 import dial
+import ringer
 import threading
 import phonebook
 from signal import pause
@@ -30,11 +31,6 @@ PHONE_STATE_BUSY = 4			# Busy signal state
 PHONE_STATE_OFF_HOOK = 5		# Off-hook signal state
 PHONE_STATE_CALL = 6			# Call connected state
 
-# Volume constants
-VOICE_VOLUME = 0.2
-TELEPHONY_VOLUME = 0.2
-SFX_VOLUME = 0.2
-
 # Dialing constants
 POST_DIAL_DELAY = 4.0
 
@@ -48,40 +44,32 @@ pddEvent = threading.Event()
 pddThread = None
 phoneState = PHONE_STATE_IDLE
 
-# Initialize pygame stuff
+# Initialize audio engine
 print "Loading audio engine..."
-pygame.mixer.pre_init(frequency = 8000, size = 8, buffer = 1024, channels = 1)
-pygame.mixer.init()
-pygame.mixer.set_num_channels(4)
-pygame.mixer.set_reserved(4)
-chanVoice = pygame.mixer.Channel(0)
-chanTelephony = pygame.mixer.Channel(1)
-chanEffectA = pygame.mixer.Channel(2)
-chanEffectB = pygame.mixer.Channel(3)
-
-chanVoice.set_volume(VOICE_VOLUME)
-chanTelephony.set_volume(TELEPHONY_VOLUME)
-chanEffectA.set_volume(SFX_VOLUME)
-chanEffectB.set_volume(SFX_VOLUME)
+ba.init()
 
 # Load phrases
 def loadSoundDirectory(dir):
 	(root, _, contents) = walk(dir).next()
-	return [pygame.mixer.Sound(f) for f in [root + "/" + f for f in contents if f.endswith(".wav")]]
+	return [ba.Sound(f) for f in [root + "/" + f for f in contents if f.endswith(".wav")]]
 
 phrases = loadSoundDirectory("./sound/etc")
 feelPhrases = loadSoundDirectory("./sound/etc/feel")
 pickupPhrases = loadSoundDirectory("./sound/etc/pickup")
+readyPhrase = ba.Sound("./sound/status/ready.wav")
 
 # Load telephony signals
-dialTone = pygame.mixer.Sound("./sound/tones/dial.wav")
-ringTone = pygame.mixer.Sound("./sound/tones/ring.wav")
-offHookTone = pygame.mixer.Sound("./sound/tones/offhook.wav")
-busyTone = pygame.mixer.Sound("./sound/tones/busy.wav")
+dialTone = ba.Sound("./sound/tones/dial.wav")
+ringTone = ba.Sound("./sound/tones/ring.wav")
+offHookTone = ba.Sound("./sound/tones/offhook.wav")
+busyTone = ba.Sound("./sound/tones/busy.wav")
 
 # Load SFX
 pickupSounds = loadSoundDirectory("./sound/pickup")
 hangupSounds = loadSoundDirectory("./sound/hangup")
+
+# Initialize ringer
+ringer.init()
 
 def setPhoneState(state):
 	global phoneState, dialedNumber
@@ -89,35 +77,30 @@ def setPhoneState(state):
 		return
 
 	if state == PHONE_STATE_IDLE:
-		chanTelephony.stop()
-		chanVoice.stop()
-		chanEffectA.stop()
-		chanEffectB.stop()
+		ba.stop()
 		dialedNumber = ""
+		digitEvent.set()
+		digitEvent.clear()
 	elif state == PHONE_STATE_DIAL:
-		chanTelephony.play(dialTone, loops = -1)
+		ba.play_loop(ba.CHAN_TELEPHONY, dialTone)
 	elif state == PHONE_STATE_DIAL_DELAY:
-		chanTelephony.stop()
+		ba.stop(ba.CHAN_TELEPHONY)
 	elif state == PHONE_STATE_OFF_HOOK:
-		chanTelephony.play(offHookTone, loops = -1)
+		ba.play_loop(ba.CHAN_TELEPHONY, offHookTone)
 	elif state == PHONE_STATE_RING:
-		chanTelephony.play(ringTone, loops = -1)
+		ba.play_loop(ba.CHAN_TELEPHONY, ringTone)
 	elif state == PHONE_STATE_BUSY:
-		chanTelephony.play(busyTone, loops = -1)
+		ba.stop()
+		ba.play_loop(ba.CHAN_TELEPHONY, busyTone)
 	elif state == PHONE_STATE_CALL:
-		chanTelephony.stop()
+		ba.stop(ba.CHAN_TELEPHONY)
 	phoneState = state
 
-def wait_for_channel(ch):
-	while ch.get_busy():
-		time.sleep(0.1)
-
-def say(phrase):
-	chanVoice.play(phrase)
-	wait_for_channel(chanVoice)
-
-def load_sound(path):
-	return pygame.mixer.Sound(path)
+def set_ring_state(isRinging):
+	if isRinging:
+		ringer.on()
+	else:
+		ringer.off()
 
 def startPostDialDelay():
 	global pddThread
@@ -159,11 +142,11 @@ def doIdleSpeech():
 		clusterSize = random.choice(CLUSTER_SIZES)
 		for x in range(clusterSize):
 			# Wait for playing to finish
-			wait_for_channel(chanVoice)
+			ba.wait(ba.CHAN_VOICE)
 			# Choose random phrase and play it
 			if not isPhoneOnHook:
 				phrase = random.choice(phrases)
-				chanVoice.play(phrase)
+				ba.play(ba.CHAN_VOICE, phrase)
 			# Calculate delay before next phrase in cluster and wait
 			clusterDelay = random.uniform(PHRASE_CLUSTER_DELAY_MIN, PHRASE_CLUSTER_DELAY_MAX)
 			time.sleep(clusterDelay)
@@ -210,9 +193,9 @@ def onDigit(n):
 		startPostDialDelay()
 
 def onTouched():
-	if not isPhoneOnHook and not chanVoice.get_busy() and FEEL_PHRASE_CHANCE_PERCENT > random.randint(0, 100):
+	if not isPhoneOnHook and not ba.busy(ba.CHAN_VOICE) and phoneState == PHONE_STATE_DIAL and FEEL_PHRASE_CHANCE_PERCENT > random.randint(0, 100):
 		phrase = random.choice(feelPhrases)
-		chanVoice.play(phrase)
+		ba.play(ba.CHAN_VOICE, phrase)
 
 def onPickUp():
 	global isPhoneOnHook
@@ -223,17 +206,15 @@ def onPickUp():
 	def pickupRespond():
 		delay = random.uniform(MIN_PICKUP_PHRASE_DELAY, MAX_PICKUP_PHRASE_DELAY)
 		time.sleep(delay)
-		if not isPhoneOnHook and not chanVoice.get_busy():
+		if not isPhoneOnHook and not ba.busy(ba.CHAN_VOICE):
 			phrase = random.choice(pickupPhrases)
-			chanVoice.play(phrase)
+			ba.play(ba.CHAN_VOICE, phrase)
 
 	# Start pickup response on another thread so we don't hold up the GPIO handlers
 	if PICKUP_PHRASE_CHANCE_PERCENT > random.randint(0, 100):
 		pickupRespondThread = threading.Thread(target = pickupRespond)
 		pickupRespondThread.daemon = True
 		pickupRespondThread.start()
-
-	print "PICKED UP"
 
 def onHangUp():
 	global isPhoneOnHook, dialedNumber
@@ -243,7 +224,6 @@ def onHangUp():
 	hangupEvent.set()
 	hangupEvent.clear()
 	setPhoneState(PHONE_STATE_IDLE)
-	print "HUNG UP"
 
 # Start services
 print "Loading directory service..."
@@ -261,11 +241,14 @@ phraseThread = threading.Thread(target = doIdleSpeech)
 phraseThread.daemon = True
 phraseThread.start()
 
-print "Awaiting orders"
+print "Ready"
+ba.say_wait(readyPhrase)
+ba.set_volume(0.5)
+
 try:
 	pause()
 except KeyboardInterrupt:
 	print " Ctrl+C detected."
 finally:
-	pygame.mixer.quit()
+	ba.quit()
 	sys.exit()

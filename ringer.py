@@ -17,6 +17,9 @@ def init():
 	ringStopEvent = threading.Event()
 	ringLock = threading.RLock()
 
+def is_ringing():
+	return ringing
+
 def on():
 	global ringing
 	try:

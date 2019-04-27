@@ -1,13 +1,14 @@
 import phonebook
 import time
 import random
+import bwwpaudio as ba
 
 rickPhrase = None
 connected = False
 
 def init(bwwp):
 	global rickPhrase
-	rickPhrase = bwwp.load_sound("./sound/special/rick.wav")
+	rickPhrase = ba.Sound("./sound/special/rick.wav")
 
 def call(bwwp, num, answer, hangup):
 	global connected
@@ -16,14 +17,15 @@ def call(bwwp, num, answer, hangup):
 		return
 	connected = True
 
-	bwwp.chanEffectA.play(random.choice(bwwp.pickupSounds))
+	ba.play(ba.CHAN_SFX_A, random.choice(bwwp.pickupSounds))
 
 	time.sleep(random.uniform(1.7, 3.0))
 
 	if not connected:
 		return
 
-	bwwp.say(rickPhrase)
+	ba.play(ba.CHAN_VOICE, rickPhrase)
+	ba.wait(ba.CHAN_VOICE)
 
 	if not connected:
 		return
@@ -33,8 +35,8 @@ def call(bwwp, num, answer, hangup):
 	if not connected:
 		return
 
-	bwwp.chanEffectA.play(random.choice(bwwp.hangupSounds))
-	bwwp.wait_for_channel(bwwp.chanEffectA)
+	ba.play(ba.CHAN_SFX_A, random.choice(bwwp.hangupSounds))
+	ba.wait(ba.CHAN_SFX_A)
 
 	hangup()
 

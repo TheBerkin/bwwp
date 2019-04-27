@@ -53,11 +53,13 @@ def init():
 		global on_pick_up
 		if on_pick_up is not None:
 			on_pick_up()
+		print "PICKED UP"
 
 	def onHookDown():
 		global on_hang_up
 		if on_hang_up is not None:
 			on_hang_up()
+		print "HUNG UP"
 
 	dial.when_released = onDialPulse
 	dialSwitch.when_pressed = onDialSwitchOn
