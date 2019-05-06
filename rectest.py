@@ -9,8 +9,8 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 44100
 
-THRESHOLD = 0.2
-DEBOUNCE_TIME = 10
+THRESHOLD = 0.005
+DEBOUNCE_TIME = 0.1
 
 def listen():
 	chunk_size = int(CHUNK_TIME * RATE)
@@ -49,6 +49,5 @@ def listen():
 	stream.stop_stream()
 	stream.close()
 	p.terminate()
-
 
 listen()

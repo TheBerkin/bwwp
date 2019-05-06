@@ -1,0 +1,118 @@
+from gpiozero import Button
+import time
+import threading
+
+SH_MANUAL_PULSE_INTERVAL = 0.167
+SH_HANGUP_DELAY = 0.35
+
+on_digit = None
+
+on_bad_digit = None
+
+on_touched = None
+
+on_pick_up = None
+
+on_hang_up = None
+
+on_pulse = None
+
+digits = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]
+dial = None
+dialSwitch = None
+hook = None
+dialPulses = 0
+isDialSwitchOn = False
+isSwitchHookDial = False
+isLoaded = False
+hookSwitchDownEvent = threading.Event()
+hookSwitchUpEvent = threading.Event()
+digitLock = threading.RLock()
+
+def init():
+	global isLoaded, digits, dial, dialSwitch, dialPulses, isDialSwitchOn, hook
+
+	if isLoaded:
+		return
+
+	dial = Button(2, bounce_time = 0.025)
+	dialSwitch = Button(4, bounce_time = 0.1)
+	hook = Button(5, bounce_time = 0.025)
+
+	def onDialRelease():
+		global isDialSwitchOn, dialPulses
+		if isDialSwitchOn:
+			dialPulses += 1
+		if on_pulse is not None:
+			on_pulse()
+
+	def onDialSwitchOn():
+		global isDialSwitchOn
+		isDialSwitchOn = True
+		if on_touched is not None:
+			on_touched()
+
+	def handleDigit():
+		global dialPulses
+		try:
+			digitLock.acquire()
+			digitIndex = dialPulses - 1
+			if digitIndex >= 0 and digitIndex < len(digits):
+				digit = digits[digitIndex]
+				if on_digit is not None:
+					on_digit(digit)
+			else:
+				if on_bad_digit is not None:
+					on_bad_digit(dialPulses)
+		finally:
+			dialPulses = 0
+			digitLock.release()
+
+	def onDialSwitchOff():
+		global isDialSwitchOn, dialPulses, digits, on_digit, on_bad_digit
+		isDialSwitchOn = False
+		handleDigit()
+
+	def onHookUp():
+		global on_pick_up
+		hookSwitchUpEvent.set()
+		if on_pick_up is not None:
+			on_pick_up()
+
+	def onHookDown():
+		global on_hang_up
+		hookSwitchDownEvent.set()
+
+	def hookSwitchFunc():
+		global dialPulses
+		intervalActive = False
+		while True:
+			if not hookSwitchDownEvent.wait(timeout = SH_MANUAL_PULSE_INTERVAL):
+				handleDigit()
+			hookSwitchDownEvent.clear()
+			if hookSwitchUpEvent.wait(timeout = SH_HANGUP_DELAY):
+				dialPulses += 1
+			else:
+				intervalActive = 
+				if on_hang_up is not None:
+					on_hang_up()
+			hookSwitchUpEvent.clear()
+
+
+	dial.when_released = onDialRelease
+	dialSwitch.when_pressed = onDialSwitchOn
+	dialSwitch.when_released = onDialSwitchOff
+	hook.when_pressed = onHookUp
+	hook.when_released = onHookDown
+	hookSwitchThread = threading.Thread(target = hookSwitchFunc)
+	hookSwitchThread.daemon = True
+	hookSwitchThread.start()
+
+	if hook.is_active:
+		if on_pick_up is not None:
+			on_pick_up()
+	else:
+		if on_hang_up is not None:
+			on_hang_up()
+
+	isLoaded = True

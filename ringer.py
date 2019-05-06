@@ -20,7 +20,7 @@ def init():
 def is_ringing():
 	return ringing
 
-def on():
+def on(**kwargs):
 	global ringing
 	try:
 		ringLock.acquire()
@@ -33,12 +33,12 @@ def on():
 			global ringing
 			ringStopEvent.clear()
 			while True:
-				pulseTime = 1.0 / (RING_FREQUENCY * 2.0)
+				pulseTime = 1.0 / (kwargs.get('frequency', RING_FREQUENCY) * 2.0)
 				driver.blink(on_time = pulseTime, off_time = pulseTime, n = None, background = True)
-				if ringStopEvent.wait(RING_ON_DURATION):
+				if ringStopEvent.wait(kwargs.get('on_time', RING_ON_DURATION)):
 					break
 				driver.off()
-				if ringStopEvent.wait(RING_OFF_DURATION):
+				if ringStopEvent.wait(kwargs.get('off_time', RING_OFF_DURATION)):
 					break
 			driver.off()
 			ringStopEvent.clear()

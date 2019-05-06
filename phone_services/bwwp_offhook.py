@@ -18,4 +18,4 @@ def endcall(bwwp):
 	global connected
 	connected = False
 
-phonebook.add("666", call, endcall)
+phonebook.add("1116", call, endcall)
